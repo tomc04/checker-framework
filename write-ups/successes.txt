@@ -1,1 +1,6 @@
+# successes
 
+When given the issue and a short explanation of what to do, the LLM was able to come up with a few fixes. 
+I also mentioned the tests that were being run, so it can run them against the code changes, checking 
+whether its (the LLM's) updates had any impact. If there were no impact, the LLM was quick to come up with new changes 
+and try again. I believe it was able to pass the tests that pertain to the issue. 
