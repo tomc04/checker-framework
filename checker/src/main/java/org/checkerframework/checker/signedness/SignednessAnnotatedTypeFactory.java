@@ -6,16 +6,21 @@ import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
+import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import java.io.Serializable;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.checkerframework.checker.signedness.qual.BitPattern;
 import org.checkerframework.checker.signedness.qual.PolySigned;
 import org.checkerframework.checker.signedness.qual.Signed;
 import org.checkerframework.checker.signedness.qual.SignedPositive;
@@ -35,16 +40,22 @@ import org.checkerframework.framework.type.AnnotatedTypeMirror;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedDeclaredType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedExecutableType;
 import org.checkerframework.framework.type.AnnotatedTypeMirror.AnnotatedTypeVariable;
+import org.checkerframework.framework.type.NoElementQualifierHierarchy;
+import org.checkerframework.framework.type.QualifierHierarchy;
 import org.checkerframework.framework.type.poly.DefaultQualifierPolymorphism;
 import org.checkerframework.framework.type.poly.QualifierPolymorphism;
 import org.checkerframework.framework.type.treeannotator.ListTreeAnnotator;
 import org.checkerframework.framework.type.treeannotator.PropagationTreeAnnotator;
 import org.checkerframework.framework.type.treeannotator.TreeAnnotator;
+import org.checkerframework.framework.util.DefaultQualifierKindHierarchy;
+import org.checkerframework.framework.util.QualifierKind;
+import org.checkerframework.framework.util.QualifierKindHierarchy;
 import org.checkerframework.javacutil.AnnotationBuilder;
 import org.checkerframework.javacutil.AnnotationMirrorSet;
 import org.checkerframework.javacutil.AnnotationUtils;
 import org.checkerframework.javacutil.TreeUtils;
 import org.checkerframework.javacutil.TypeKindUtils;
+import org.checkerframework.javacutil.TypeSystemError;
 import org.checkerframework.javacutil.TypesUtils;
 
 /**
@@ -71,6 +82,10 @@ public class SignednessAnnotatedTypeFactory extends BaseAnnotatedTypeFactory {
   /** The @SignednessBottom annotation. */
   protected final AnnotationMirror SIGNEDNESS_BOTTOM =
       AnnotationBuilder.fromClass(elements, SignednessBottom.class);
+
+  /** The @BitPattern annotation. */
+  protected final AnnotationMirror BIT_PATTERN =
+      AnnotationBuilder.fromClass(elements, BitPattern.class);
 
   /** The @PolySigned annotation. */
   protected final AnnotationMirror POLY_SIGNED =
@@ -261,7 +276,8 @@ public class SignednessAnnotatedTypeFactory extends BaseAnnotatedTypeFactory {
 
   @Override
   protected TreeAnnotator createTreeAnnotator() {
-    return new ListTreeAnnotator(new SignednessTreeAnnotator(this), super.createTreeAnnotator());
+    // Run the default annotators first, then apply our overrides last so they take precedence.
+    return new ListTreeAnnotator(super.createTreeAnnotator(), new SignednessTreeAnnotator(this));
   }
 
   @Override
@@ -306,6 +322,17 @@ public class SignednessAnnotatedTypeFactory extends BaseAnnotatedTypeFactory {
             type.replaceAnnotations(lht.getPrimaryAnnotations());
           }
           break;
+        case AND:
+        case OR:
+        case XOR:
+          // Bitwise operations preserve @BitPattern if either operand has it
+          AnnotatedTypeMirror leftType = getAnnotatedType(tree.getLeftOperand());
+          AnnotatedTypeMirror rightType = getAnnotatedType(tree.getRightOperand());
+          if (leftType.hasPrimaryAnnotation(BitPattern.class)
+              || rightType.hasPrimaryAnnotation(BitPattern.class)) {
+            type.replaceAnnotation(BIT_PATTERN);
+          }
+          break;
         default:
           // Do nothing
       }
@@ -320,6 +347,18 @@ public class SignednessAnnotatedTypeFactory extends BaseAnnotatedTypeFactory {
         }
       }
       return null;
+    }
+
+    @Override
+    public Void visitUnary(UnaryTree tree, AnnotatedTypeMirror type) {
+      // Bitwise complement (~) preserves @BitPattern
+      if (tree.getKind() == Tree.Kind.BITWISE_COMPLEMENT) {
+        AnnotatedTypeMirror exprType = getAnnotatedType(tree.getExpression());
+        if (exprType.hasPrimaryAnnotation(BitPattern.class)) {
+          type.replaceAnnotation(BIT_PATTERN);
+        }
+      }
+      return super.visitUnary(tree, type);
     }
 
     @Override
@@ -456,4 +495,17 @@ public class SignednessAnnotatedTypeFactory extends BaseAnnotatedTypeFactory {
   protected QualifierPolymorphism createQualifierPolymorphism() {
     return new SignednessQualifierPolymorphism(processingEnv, this);
   }
+
+  @Override
+  protected QualifierHierarchy createQualifierHierarchy() {
+    return super.createQualifierHierarchy();
+  }
+  /*
+   * A custom QualifierHierarchy for the Signedness Checker that properly handles the relationship
+   * between @BitPattern and other qualifiers. @BitPattern is unrelated to @Signed, @Unsigned, and
+   * their subtypes, even though they all share @UnknownSignedness as a top.
+   */
+  // Removed unused custom QualifierHierarchy; relying on default hierarchy now.
+
+  // Removed unused custom QualifierKindHierarchy; default hierarchy is sufficient now.
 }
