@@ -1,1 +1,9 @@
+# failures 
 
+I think the LLM had some issues parsing through the files initially, because it's a larger codebase. It 
+felt look it took more time thinking on fixes than in previous assignments. Another thing was that it would
+continually try to fix the tests under the forbidden section (which I believe is not part of the issue and
+does not need to be addressed). This caused it to go on a few loops because it would try to come up with a 
+solution but it nevered worked. Also as for setup, the software versions installed on my computer were not
+compatible, so I needed an upgrade. I tried using the LLM to help but it would struggle. I ended up taking
+a mix of suggestions from it along with web information to do it myself. 
